@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"/>
+  <meta name="theme-color" id="tc" content="#000000"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="Orbit"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <title>Orbit</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
+    html,body,#root{height:100%;height:100dvh;overflow:hidden}
+    body{font-family:'Plus Jakarta Sans',sans-serif}
+    input,button,textarea,select{font-family:'Plus Jakarta Sans',sans-serif}
+    input[type=number]::-webkit-outer-spin-button,
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+    input[type=number]{-moz-appearance:textfield}
+    ::-webkit-scrollbar{display:none}
+    #inst{display:none;position:fixed;bottom:76px;left:16px;right:16px;padding:16px;border-radius:18px;font-weight:700;font-size:15px;border:none;cursor:pointer;z-index:9999;animation:slideUp .4s cubic-bezier(.34,1.56,.64,1)}
+    @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes spinIn{from{transform:rotate(-90deg) scale(.8);opacity:0}to{transform:rotate(0) scale(1);opacity:1}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes popIn{0%{transform:scale(.88);opacity:0}60%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+    @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+    @keyframes burst{0%{transform:scale(1);opacity:1}100%{transform:scale(2.4);opacity:0}}
+    @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<button id="inst" onclick="doInstall()">⊕ Add Orbit to Home Screen</button>
+<script>
+  let _dp;
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();_dp=e;const b=document.getElementById('inst');b.style.display='block';b.style.background=document.documentElement.getAttribute('data-dark')==='1'?'#fff':'#000';b.style.color=document.documentElement.getAttribute('data-dark')==='1'?'#000':'#fff';});
+  window.addEventListener('appinstalled',()=>{document.getElementById('inst').style.display='none';});
+  function doInstall(){if(_dp){_dp.prompt();_dp.userChoice.then(()=>{_dp=null;document.getElementById('inst').style.display='none';});}}
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
+</script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback,createContext,useContext} = React;
+
+// ─── THEME ───────────────────────────────────────────────────
+const ThemeCtx = createContext({dark:false,toggle:()=>{}});
+
+const LIGHT = {
+  bg:         '#F2F2F7',
+  bg2:        '#FFFFFF',
+  bg3:        '#E5E5EA',
+  bg4:        'rgba(118,118,128,.12)',
+  label:      '#000000',
+  label2:     'rgba(60,60,67,.6)',
+  label3:     'rgba(60,60,67,.3)',
+  sep:        'rgba(60,60,67,.18)',
+  fill:       'rgba(60,60,67,.05)',
+  glass:      'rgba(255,255,255,.72)',
+  shadow:     '0 2px 20px rgba(0,0,0,.08)',
+  shadowHeavy:'0 8px 40px rgba(0,0,0,.14)',
+};
+const DARK = {
+  bg:         '#000000',
+  bg2:        '#1C1C1E',
+  bg3:        '#2C2C2E',
+  bg4:        'rgba(118,118,128,.24)',
+  label:      '#FFFFFF',
+  label2:     'rgba(235,235,245,.6)',
+  label3:     'rgba(235,235,245,.3)',
+  sep:        'rgba(84,84,88,.65)',
+  fill:       'rgba(118,118,128,.18)',
+  glass:      'rgba(28,28,30,.8)',
+  shadow:     '0 2px 20px rgba(0,0,0,.4)',
+  shadowHeavy:'0 8px 40px rgba(0,0,0,.6)',
+};
+
+// Apple ring colors — Move, Exercise, Stand + extras
+const RING_COLORS = {
+  finance:  { stroke:'#30D158', glow:'rgba(48,209,88,.35)',   bg:'rgba(48,209,88,.15)',   dark:'rgba(48,209,88,.08)'  },
+  health:   { stroke:'#FF375F', glow:'rgba(255,55,95,.35)',   bg:'rgba(255,55,95,.15)',   dark:'rgba(255,55,95,.08)'  },
+  mind:     { stroke:'#35C0F6', glow:'rgba(53,192,246,.35)',  bg:'rgba(53,192,246,.15)',  dark:'rgba(53,192,246,.08)' },
+  connect:  { stroke:'#FF6AD5', glow:'rgba(255,106,213,.35)', bg:'rgba(255,106,213,.15)', dark:'rgba(255,106,213,.08)'},
+  growth:   { stroke:'#FF9F0A', glow:'rgba(255,159,10,.35)',  bg:'rgba(255,159,10,.15)',  dark:'rgba(255,159,10,.08)' },
+  custom:   { stroke:'#BF5AF2', glow:'rgba(191,90,242,.35)',  bg:'rgba(191,90,242,.15)',  dark:'rgba(191,90,242,.08)' },
+};
+const CAT_META = {
+  finance: {label:'Finance',  icon:'💰', desc:'Money & savings goals'},
+  health:  {label:'Health',   icon:'🏃', desc:'Body & wellness'},
+  mind:    {label:'Mind',     icon:'🧠', desc:'Learning & calm'},
+  connect: {label:'Connect',  icon:'❤️',  desc:'Relationships & social'},
+  growth:  {label:'Growth',   icon:'🌱', desc:'Career & skills'},
+  custom:  {label:'Custom',   icon:'⭐', desc:'Anything else'},
+};
+
+// ─── STORAGE ─────────────────────────────────────────────────
+const S = {
+  get: k => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):null; } catch { return null; } },
+  set: (k,v) => { try { localStorage.setItem(k,JSON.stringify(v)); } catch {} },
+};
+
+// ─── RING SVG ─────────────────────────────────────────────────
+function Ring({ pct=0, color='#30D158', r=60, sw=12, glow, delay=0, animated=true }) {
+  const circ = 2 * Math.PI * r;
+  const offset = circ - Math.min(pct,100)/100 * circ;
+  const sz = (r+sw)*2+4;
+  const c = r+sw+2;
+  return (
+    <svg width={sz} height={sz} style={{overflow:'visible',flexShrink:0}}>
+      <defs>
+        <filter id={`glow-${r}`} x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="4" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      {/* Track */}
+      <circle cx={c} cy={c} r={r} fill="none" stroke={color} strokeOpacity=".18" strokeWidth={sw} strokeLinecap="round"/>
+      {/* Progress */}
+      <circle cx={c} cy={c} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
+        strokeDasharray={circ} strokeDashoffset={animated ? offset : circ}
+        transform={`rotate(-90 ${c} ${c})`}
+        style={{transition: animated ? `stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1) ${delay}s` : 'none',
+                filter: pct>5?`drop-shadow(0 0 6px ${color}88)`:undefined}}/>
+      {/* Tip glow dot */}
+      {pct>2 && pct<100 && (() => {
+        const angle = (-90 + (pct/100)*360) * Math.PI/180;
+        const tx = c + r*Math.cos(angle);
+        const ty = c + r*Math.sin(angle);
+        return <circle cx={tx} cy={ty} r={sw*.4} fill={color} opacity=".9"/>;
+      })()}
+    </svg>
+  );
+}
+
+function ConcentricRings({ goals, size=260, animated=true }) {
+  const active = goals.filter(g=>g.active!==false).slice(0,5);
+  const n = Math.max(active.length, 1);
+  const outerR = size/2 - 8;
+  const sw = Math.min(14, Math.max(10, Math.floor((outerR*0.18)));
+  const gap = 5;
+  const radii = Array.from({length:n},(_,i)=> outerR - i*(sw+gap));
+  const svgSize = size;
+  const center = svgSize/2;
+  const totalPct = active.length ? active.reduce((s,g)=>s+(g.progress/g.target*100),0)/active.length : 0;
+
+  return (
+    <div style={{position:'relative',width:svgSize,height:svgSize,flexShrink:0}}>
+      <svg width={svgSize} height={svgSize} style={{position:'absolute',inset:0}}>
+        {active.map((goal,i) => {
+          const r = radii[i];
+          const circ = 2*Math.PI*r;
+          const pct = Math.min(goal.progress/goal.target*100, 100);
+          const offset = circ - pct/100*circ;
+          const col = RING_COLORS[goal.category]?.stroke || RING_COLORS.custom.stroke;
+          const tipAngle = (-90 + pct/100*360)*Math.PI/180;
+          const tx = center + r*Math.cos(tipAngle);
+          const ty = center + r*Math.sin(tipAngle);
+          return (
+            <g key={goal.id}>
+              <circle cx={center} cy={center} r={r} fill="none" stroke={col} strokeOpacity=".15" strokeWidth={sw}/>
+              <circle cx={center} cy={center} r={r} fill="none" stroke={col} strokeWidth={sw} strokeLinecap="round"
+                strokeDasharray={circ} strokeDashoffset={animated?offset:circ}
+                transform={`rotate(-90 ${center} ${center})`}
+                style={{transition:`stroke-dashoffset 1.4s cubic-bezier(.4,0,.2,1) ${i*.12}s`,
+                        filter:`drop-shadow(0 0 ${sw*.5}px ${col}66)`}}/>
+              {pct>2&&pct<100.5&&<circle cx={tx} cy={ty} r={sw*.38} fill={col} opacity=".9"
+                style={{filter:`drop-shadow(0 0 4px ${col})`}}/>}
+            </g>
+          );
+        })}
+      </svg>
+      {/* Center */}
+      <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',pointerEvents:'none'}}>
+        <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:svgSize*.14,lineHeight:1,letterSpacing:'-.02em'}}>{Math.round(totalPct)}%</div>
+        <div style={{fontSize:svgSize*.055,opacity:.5,fontWeight:500,marginTop:4}}>complete</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── SPLASH ───────────────────────────────────────────────────
+function Splash({onDone}) {
+  useEffect(()=>{setTimeout(onDone,2000);},[]);
+  return (
+    <div style={{height:'100dvh',background:'#000',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:0}}>
+      <style>{`.orb{animation:float 2s ease infinite}`}</style>
+      <div className="orb" style={{marginBottom:28,position:'relative',width:120,height:120}}>
+        <svg width={120} height={120} style={{position:'absolute',inset:0}}>
+          {[{r:48,sw:11,col:'#30D158',p:82,d:.1},{r:34,sw:11,col:'#FF375F',p:60,d:.25},{r:20,sw:11,col:'#35C0F6',p:45,d:.4}].map((ring,i)=>{
+            const c=60,circ=2*Math.PI*ring.r;
+            const off=circ-ring.p/100*circ;
+            return(<g key={i}>
+              <circle cx={c} cy={c} r={ring.r} fill="none" stroke={ring.col} strokeOpacity=".2" strokeWidth={ring.sw}/>
+              <circle cx={c} cy={c} r={ring.r} fill="none" stroke={ring.col} strokeWidth={ring.sw} strokeLinecap="round"
+                strokeDasharray={circ} strokeDashoffset={off} transform={`rotate(-90 ${c} ${c})`}
+                style={{filter:`drop-shadow(0 0 8px ${ring.col}88)`}}/>
+            </g>);
+          })}
+        </svg>
+      </div>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:42,color:'#fff',letterSpacing:'-.04em',animation:'fadeUp .6s ease .3s both'}}>Orbit</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:16,color:'rgba(235,235,245,.5)',marginTop:8,fontWeight:400,animation:'fadeUp .6s ease .5s both'}}>Your life. In motion.</div>
+    </div>
+  );
+}
+
+// ─── ONBOARDING ───────────────────────────────────────────────
+const PROFILES = [
+  {id:'salary',    label:'Salary',      icon:'💼', sub:'Fixed monthly income'},
+  {id:'corper',    label:'NYSC Corper', icon:'🎖️', sub:'₦33k allawee + extras'},
+  {id:'freelancer',label:'Freelancer',  icon:'💻', sub:'Variable income'},
+  {id:'student',   label:'Student',     icon:'🎓', sub:'Allowance based'},
+  {id:'business',  label:'Business',    icon:'🛒', sub:'Running your own thing'},
+  {id:'homemaker', label:'Homemaker',   icon:'🏡', sub:'Home is your domain'},
+];
+const CITIES = ['Lagos','Abuja','Port Harcourt','Ibadan','Kano','Enugu','Other'];
+const FOCUS_AREAS = [
+  {id:'finance', icon:'💰', label:'Finance',   desc:'Budget, savings, debt'},
+  {id:'health',  icon:'🏃', label:'Health',    desc:'Fitness & wellness'},
+  {id:'mind',    icon:'🧠', label:'Mind',      desc:'Learning & clarity'},
+  {id:'connect', icon:'❤️',  label:'Connect',   desc:'People & relationships'},
+  {id:'growth',  icon:'🌱', label:'Growth',    desc:'Career & skills'},
+];
+
+function Onboarding({onComplete}) {
+  const {dark,T} = useContext(ThemeCtx);
+  const [step,setStep] = useState(0);
+  const [d,setD] = useState({name:'',gender:'',focus:[],income:'',profile:'',city:''});
+  const [building,setBuilding] = useState(false);
+  const set = (k,v) => setD(p=>({...p,[k]:v}));
+
+  const valid = [
+    d.name.trim().length>=2 && !!d.gender,
+    d.focus.length>=1,
+    !d.focus.includes('finance') || parseInt(d.income.replace(/,/g,''))>=500,
+    !!d.profile,
+    !!d.city,
+  ];
+
+  const next = () => {
+    if (step===4) {
+      setBuilding(true);
+      setTimeout(() => {
+        const profile = {...d, income: parseInt(d.income.replace(/,/g,''))||33000, createdAt:Date.now()};
+        const goals = buildInitialGoals(profile);
+        S.set('orbit_profile', profile);
+        S.set('orbit_goals', goals);
+        onComplete(profile, goals);
+      }, 2200);
+      return;
+    }
+    if (step===1 && !d.focus.includes('finance')) {
+      setStep(3); return;
+    }
+    setStep(s=>s+1);
+  };
+  const back = () => {
+    if (step===3 && !d.focus.includes('finance')) { setStep(1); return; }
+    setStep(s=>Math.max(0,s-1));
+  };
+
+  if (building) return (
+    <div style={{height:'100dvh',background:dark?'#000':'#F2F2F7',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:32,textAlign:'center'}}>
+      <div style={{marginBottom:32}}>
+        <ConcentricRings goals={[
+          {id:1,category:'finance',progress:82,target:100,active:true},
+          {id:2,category:'health',progress:60,target:100,active:true},
+          {id:3,category:'mind',progress:45,target:100,active:true},
+        ]} size={200} animated={true}/>
+      </div>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:26,color:T.label,letterSpacing:'-.02em',animation:'fadeUp .5s ease'}}>Building your orbit...</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginTop:8,animation:'fadeUp .5s ease .15s both'}}>Personalising for {d.name.split(' ')[0]}</div>
+    </div>
+  );
+
+  const bg = dark?'#000':'#F2F2F7';
+  const card = {background:T.bg2,borderRadius:22,padding:20,marginBottom:12,boxShadow:T.shadow};
+  const inp = {width:'100%',padding:'16px',borderRadius:16,border:`1.5px solid ${T.sep}`,background:T.bg2,color:T.label,fontSize:18,fontFamily:'Instrument Sans',fontWeight:600,outline:'none',transition:'border-color .2s'};
+
+  const steps = [
+    // 0: name + gender
+    <div key="0" style={{animation:'fadeUp .4s ease'}}>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:32,color:T.label,letterSpacing:'-.03em',lineHeight:1.15,marginBottom:8}}>What should we call you?</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginBottom:28,lineHeight:1.6}}>Orbit works best when it knows you.</div>
+      <input value={d.name} onChange={e=>set('name',e.target.value)} placeholder="Your name" autoFocus
+        style={{...inp,fontSize:22,borderColor:d.name.trim().length>=2?RING_COLORS.finance.stroke:T.sep,marginBottom:20}}
+        onKeyDown={e=>e.key==='Enter'&&d.name.trim().length>=2&&next()}/>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:13,color:T.label3,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:12,fontWeight:600}}>Gender</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        {[{id:'male',icon:'🧔',label:'Male'},{id:'female',icon:'👩',label:'Female'}].map(g=>(
+          <button key={g.id} onClick={()=>set('gender',g.id)}
+            style={{padding:'20px',borderRadius:18,border:`2px solid ${d.gender===g.id?RING_COLORS.finance.stroke:T.sep}`,background:d.gender===g.id?RING_COLORS.finance.bg:T.bg2,cursor:'pointer',textAlign:'center',transition:'all .15s'}}>
+            <div style={{fontSize:32,marginBottom:8}}>{g.icon}</div>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>{g.label}</div>
+          </button>
+        ))}
+      </div>
+    </div>,
+
+    // 1: focus areas
+    <div key="1" style={{animation:'fadeUp .4s ease'}}>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:32,color:T.label,letterSpacing:'-.03em',lineHeight:1.15,marginBottom:8}}>What are you working on?</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginBottom:28,lineHeight:1.6}}>Your rings. Pick what matters.</div>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {FOCUS_AREAS.map((f,i)=>{
+          const sel=d.focus.includes(f.id);
+          const col=RING_COLORS[f.id];
+          return(
+            <button key={f.id} onClick={()=>set('focus',sel?d.focus.filter(x=>x!==f.id):[...d.focus,f.id])}
+              style={{padding:'16px 18px',borderRadius:18,border:`2px solid ${sel?col.stroke:T.sep}`,background:sel?col.bg:T.bg2,cursor:'pointer',display:'flex',alignItems:'center',gap:14,transition:'all .15s',animation:`fadeUp .3s ease ${i*.06}s both`}}>
+              <div style={{width:44,height:44,borderRadius:14,background:sel?col.stroke:T.fill,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,transition:'background .15s'}}>{f.icon}</div>
+              <div style={{textAlign:'left'}}>
+                <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>{f.label}</div>
+                <div style={{fontFamily:'Plus Jakarta Sans',fontSize:13,color:T.label2,marginTop:2}}>{f.desc}</div>
+              </div>
+              <div style={{marginLeft:'auto',width:22,height:22,borderRadius:99,background:sel?col.stroke:T.bg3,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,color:'#fff',fontWeight:700,transition:'all .15s'}}>{sel?'✓':''}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>,
+
+    // 2: income
+    <div key="2" style={{animation:'fadeUp .4s ease'}}>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:32,color:T.label,letterSpacing:'-.03em',lineHeight:1.15,marginBottom:8}}>Monthly income?</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginBottom:28,lineHeight:1.6}}>Private and honest. Better numbers → better budget.</div>
+      <div style={{position:'relative',marginBottom:16}}>
+        <span style={{position:'absolute',left:18,top:'50%',transform:'translateY(-50%)',fontFamily:'Instrument Sans',fontSize:24,fontWeight:700,color:RING_COLORS.finance.stroke}}>₦</span>
+        <input value={d.income} type="tel" inputMode="numeric" placeholder="0"
+          onChange={e=>{const r=e.target.value.replace(/\D/g,'');set('income',r?parseInt(r).toLocaleString():'');}}
+          style={{...inp,paddingLeft:50,fontSize:28,borderColor:parseInt(d.income.replace(/,/g,''))>=500?RING_COLORS.finance.stroke:T.sep}}/>
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+        {[33000,50000,80000,120000,200000,300000].map(a=>(
+          <button key={a} onClick={()=>set('income',a.toLocaleString())}
+            style={{padding:'8px 14px',borderRadius:99,border:`1.5px solid ${d.income===a.toLocaleString()?RING_COLORS.finance.stroke:T.sep}`,background:d.income===a.toLocaleString()?RING_COLORS.finance.bg:T.bg2,fontSize:13,fontFamily:'Plus Jakarta Sans',fontWeight:600,color:d.income===a.toLocaleString()?RING_COLORS.finance.stroke:T.label2,cursor:'pointer',transition:'all .15s'}}>
+            ₦{a.toLocaleString()}
+          </button>
+        ))}
+      </div>
+    </div>,
+
+    // 3: profile type
+    <div key="3" style={{animation:'fadeUp .4s ease'}}>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:32,color:T.label,letterSpacing:'-.03em',lineHeight:1.15,marginBottom:8}}>Your situation?</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginBottom:24,lineHeight:1.6}}>We'll tailor your suggestions.</div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        {PROFILES.map((p,i)=>(
+          <button key={p.id} onClick={()=>set('profile',p.id)}
+            style={{padding:'16px',borderRadius:18,border:`2px solid ${d.profile===p.id?RING_COLORS.growth.stroke:T.sep}`,background:d.profile===p.id?RING_COLORS.growth.bg:T.bg2,cursor:'pointer',textAlign:'left',transition:'all .15s',animation:`fadeUp .3s ease ${i*.05}s both`}}>
+            <div style={{fontSize:26,marginBottom:8}}>{p.icon}</div>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:14,color:T.label}}>{p.label}</div>
+            <div style={{fontFamily:'Plus Jakarta Sans',fontSize:11,color:T.label2,marginTop:3}}>{p.sub}</div>
+          </button>
+        ))}
+      </div>
+    </div>,
+
+    // 4: city
+    <div key="4" style={{animation:'fadeUp .4s ease'}}>
+      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:32,color:T.label,letterSpacing:'-.03em',lineHeight:1.15,marginBottom:8}}>Where are you based?</div>
+      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,marginBottom:24}}>Cost of living shapes your orbit.</div>
+      <div style={{display:'flex',flexDirection:'column',gap:2,background:T.bg2,borderRadius:20,overflow:'hidden',boxShadow:T.shadow}}>
+        {CITIES.map((city,i)=>(
+          <button key={city} onClick={()=>set('city',city)}
+            style={{padding:'16px 18px',background:d.city===city?RING_COLORS.connect.bg:T.bg2,border:'none',borderBottom:i<CITIES.length-1?`1px solid ${T.sep}`:'none',cursor:'pointer',display:'flex',justifyContent:'space-between',alignItems:'center',transition:'background .15s'}}>
+            <span style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>{city}</span>
+            {d.city===city&&<span style={{color:RING_COLORS.connect.stroke,fontWeight:700,fontSize:18}}>✓</span>}
+          </button>
+        ))}
+      </div>
+    </div>,
+  ];
+
+  const stepIdx = step > 2 ? step : step;
+  const pct = ((step+1)/5)*100;
+
+  return (
+    <div style={{height:'100dvh',display:'flex',flexDirection:'column',background:bg}}>
+      <div style={{padding:'calc(env(safe-area-inset-top,0px)+16px) 20px 0'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <button onClick={back} style={{background:'none',border:'none',color:step>0?RING_COLORS.mind.stroke:'transparent',fontSize:15,fontFamily:'Plus Jakarta Sans',fontWeight:600,cursor:'pointer',padding:'4px 0'}}>← Back</button>
+          <span style={{fontFamily:'Plus Jakarta Sans',fontSize:13,color:T.label3,fontWeight:500}}>{step+1} / 5</span>
+        </div>
+        <div style={{height:4,background:T.bg3,borderRadius:99,overflow:'hidden'}}>
+          <div style={{height:'100%',borderRadius:99,background:`linear-gradient(90deg,${RING_COLORS.finance.stroke},${RING_COLORS.health.stroke},${RING_COLORS.mind.stroke})`,backgroundSize:'300% 100%',width:`${pct}%`,transition:'width .4s cubic-bezier(.4,0,.2,1)'}}/>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'28px 20px 16px'}}>{steps[step]}</div>
+      <div style={{padding:'12px 20px',paddingBottom:'calc(env(safe-area-inset-bottom,0px)+20px)'}}>
+        <button onClick={next} disabled={!valid[step]}
+          style={{width:'100%',padding:'17px',borderRadius:20,background:valid[step]?'#000':T.bg3,color:valid[step]?'#fff':T.label3,border:'none',fontFamily:'Instrument Sans',fontSize:17,fontWeight:700,cursor:valid[step]?'pointer':'default',transition:'all .2s',letterSpacing:'-.01em',boxShadow:valid[step]?'0 4px 24px rgba(0,0,0,.25)':'none'}}>
+          {step===4?'Start my orbit →':'Continue →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── GOAL BUILDER ─────────────────────────────────────────────
+function buildInitialGoals(profile) {
+  const goals = [];
+  let id = Date.now();
+  const inc = profile.income;
+  const m = profile.gender==='male';
+
+  if (profile.focus.includes('finance')) {
+    goals.push({id:id++,category:'finance',icon:'🔒',label:'Monthly Savings',target:Math.round(inc*.15/500)*500,progress:0,unit:'₦',type:'amount'});
+    if (profile.profile==='corper') goals.push({id:id++,category:'finance',icon:'🚫',label:'Avoid Loan Apps',target:1,progress:0,unit:'streak',type:'bool',desc:'Each month clean = +1'});
+    else goals.push({id:id++,category:'finance',icon:'💳',label:'Debt Clearance',target:100,progress:0,unit:'%',type:'percent'});
+  }
+  if (profile.focus.includes('health')) {
+    goals.push({id:id++,category:'health',icon:'🏃',label:`${m?'Workout':'Exercise'} sessions`,target:12,progress:0,unit:'sessions/month',type:'count'});
+    goals.push({id:id++,category:'health',icon:'💧',label:'Daily Water',target:30,progress:0,unit:'days',type:'count'});
+  }
+  if (profile.focus.includes('mind')) {
+    goals.push({id:id++,category:'mind',icon:'📚',label:'Read or Learn',target:8,progress:0,unit:'sessions/month',type:'count'});
+    goals.push({id:id++,category:'mind',icon:'🧘',label:'Mindful days',target:15,progress:0,unit:'days',type:'count'});
+  }
+  if (profile.focus.includes('connect')) {
+    goals.push({id:id++,category:'connect',icon:'☎️',label:'Call family',target:8,progress:0,unit:'calls/month',type:'count'});
+    goals.push({id:id++,category:'connect',icon:'🤝',label:'Quality time',target:4,progress:0,unit:'occasions',type:'count'});
+  }
+  if (profile.focus.includes('growth')) {
+    goals.push({id:id++,category:'growth',icon:'🛠️',label:'New skill hours',target:10,progress:0,unit:'hrs/month',type:'count'});
+    goals.push({id:id++,category:'growth',icon:'📝',label:'Applications/Pitches',target:4,progress:0,unit:'this month',type:'count'});
+  }
+  return goals;
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────
+function App({profile:initProfile,goals:initGoals}) {
+  const {dark,toggle,T} = useContext(ThemeCtx);
+  const [tab,setTab] = useState('today');
+  const [goals,setGoals] = useState(initGoals);
+  const [overrides,setOverrides] = useState(()=>S.get('orbit_overrides')||{});
+  const [loaded,setLoaded] = useState(false);
+  const [sheet,setSheet] = useState(null); // goal detail sheet
+  const [addSheet,setAddSheet] = useState(false);
+  const [newGoal,setNewGoal] = useState({label:'',category:'finance',icon:'🎯',target:'',unit:'',type:'count'});
+  const [burst,setBurst] = useState(null); // completion celebration
+
+  useEffect(()=>{setTimeout(()=>setLoaded(true),120);},[]);
+  useEffect(()=>S.set('orbit_goals',goals),[goals]);
+  useEffect(()=>S.set('orbit_overrides',overrides),[overrides]);
+
+  const updGoal = (id,patch) => setGoals(g=>g.map(x=>x.id===id?{...x,...patch}:x));
+  const delGoal = id => setGoals(g=>g.filter(x=>x.id!==id));
+
+  const logProgress = (id, delta) => {
+    setGoals(prev => {
+      const g = prev.find(x=>x.id===id);
+      if (!g) return prev;
+      const np = Math.min(Math.max(0, g.progress+delta), g.target);
+      const wasComplete = g.progress>=g.target;
+      const nowComplete = np>=g.target;
+      if (!wasComplete && nowComplete) setBurst(id);
+      setTimeout(()=>setBurst(null), 2000);
+      return prev.map(x=>x.id===id?{...x,progress:np}:x);
+    });
+  };
+
+  const pct = g => Math.min(g.progress/g.target*100, 100);
+  const activeGoals = goals.filter(g=>g.active!==false);
+  const totalPct = activeGoals.length ? activeGoals.reduce((s,g)=>s+pct(g),0)/activeGoals.length : 0;
+  const fname = initProfile.name.split(' ')[0];
+
+  // ── TODAY TAB
+  function TodayTab() {
+    const hr = new Date().getHours();
+    const greet = hr<12?'Good morning,':hr<17?'Good afternoon,':'Good evening,';
+    return (
+      <div>
+        {/* Header */}
+        <div style={{marginBottom:8}}>
+          <div style={{fontFamily:'Plus Jakarta Sans',fontSize:15,color:T.label2,fontWeight:500}}>{greet}</div>
+          <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:34,color:T.label,letterSpacing:'-.03em',lineHeight:1.15}}>{fname}.</div>
+        </div>
+
+        {/* Rings hero */}
+        <div style={{background:T.bg2,borderRadius:28,padding:'32px 24px',marginBottom:16,boxShadow:T.shadowHeavy,display:'flex',flexDirection:'column',alignItems:'center',position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',inset:0,background:dark?'radial-gradient(ellipse at 50% 0%,rgba(48,209,88,.08) 0%,transparent 70%)':'radial-gradient(ellipse at 50% 0%,rgba(48,209,88,.06) 0%,transparent 70%)'}}/>
+          <ConcentricRings goals={activeGoals} size={220} animated={loaded}/>
+          <div style={{marginTop:20,display:'flex',gap:16,flexWrap:'wrap',justifyContent:'center'}}>
+            {activeGoals.slice(0,4).map(g=>{
+              const col = RING_COLORS[g.category]?.stroke||RING_COLORS.custom.stroke;
+              return(
+                <div key={g.id} style={{display:'flex',alignItems:'center',gap:6}}>
+                  <div style={{width:8,height:8,borderRadius:99,background:col}}/>
+                  <span style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:T.label2,fontWeight:500}}>{g.icon} {g.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Quick log */}
+        <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:20,color:T.label,letterSpacing:'-.02em',marginBottom:12}}>Quick Log</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+          {activeGoals.map((g,i)=>{
+            const col = RING_COLORS[g.category]?.stroke||RING_COLORS.custom.stroke;
+            const p = pct(g);
+            const done = g.progress>=g.target;
+            return(
+              <div key={g.id} onClick={()=>setSheet(g)} style={{background:T.bg2,borderRadius:18,padding:'14px 16px',boxShadow:T.shadow,display:'flex',alignItems:'center',gap:12,cursor:'pointer',border:`1px solid ${burst===g.id?col+'66':T.sep}`,transition:'all .3s',animation:`fadeUp .3s ease ${i*.05}s both`,position:'relative',overflow:'hidden'}}>
+                {burst===g.id&&<div style={{position:'absolute',inset:0,borderRadius:18,background:`${col}22`,animation:'burst .8s ease forwards'}}/>}
+                <div style={{width:42,height:42,borderRadius:14,background:RING_COLORS[g.category]?.bg||T.fill,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{g.icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:14,color:T.label,display:'flex',alignItems:'center',gap:6}}>
+                    {g.label}
+                    {done&&<span style={{fontSize:12,background:col+'22',color:col,padding:'2px 6px',borderRadius:99,fontWeight:700}}>✓ Done</span>}
+                  </div>
+                  <div style={{height:4,background:T.bg3,borderRadius:99,overflow:'hidden',marginTop:6}}>
+                    <div style={{height:'100%',borderRadius:99,background:col,width:loaded?`${p}%`:'0%',transition:'width .6s cubic-bezier(.4,0,.2,1)',boxShadow:`0 0 8px ${col}88`}}/>
+                  </div>
+                  <div style={{fontFamily:'Plus Jakarta Sans',fontSize:11,color:T.label3,marginTop:4}}>{g.progress} / {g.target} {g.unit}</div>
+                </div>
+                <div style={{display:'flex',gap:6,flexShrink:0}}>
+                  <button onClick={e=>{e.stopPropagation();logProgress(g.id,-1);}} style={{width:34,height:34,borderRadius:10,background:T.bg3,border:'none',color:T.label2,fontSize:18,cursor:'pointer',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+                  <button onClick={e=>{e.stopPropagation();logProgress(g.id,1);}} style={{width:34,height:34,borderRadius:10,background:col,border:'none',color:'#fff',fontSize:18,cursor:'pointer',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:`0 2px 10px ${col}66`}}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button onClick={()=>setAddSheet(true)} style={{width:'100%',padding:'14px',borderRadius:16,background:T.bg2,border:`1.5px dashed ${T.sep}`,color:T.label2,fontFamily:'Instrument Sans',fontWeight:600,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8}}>
+          <span style={{fontSize:18}}>⊕</span> Add a goal
+        </button>
+      </div>
+    );
+  }
+
+  // ── GOALS TAB
+  function GoalsTab() {
+    const byCat = {};
+    goals.forEach(g=>{ if(!byCat[g.category])byCat[g.category]=[]; byCat[g.category].push(g); });
+    return(
+      <div>
+        {Object.entries(byCat).map(([cat,gs])=>{
+          const meta = CAT_META[cat];
+          const col = RING_COLORS[cat]?.stroke||RING_COLORS.custom.stroke;
+          const catPct = gs.reduce((s,g)=>s+pct(g),0)/gs.length;
+          return(
+            <div key={cat} style={{background:T.bg2,borderRadius:24,marginBottom:16,overflow:'hidden',boxShadow:T.shadow}}>
+              <div style={{padding:'18px 18px 14px',display:'flex',alignItems:'center',gap:14,borderBottom:`1px solid ${T.sep}`}}>
+                <Ring pct={catPct} color={col} r={24} sw={6} animated={loaded}/>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:18,color:T.label}}>{meta.icon} {meta.label}</div>
+                  <div style={{fontFamily:'Plus Jakarta Sans',fontSize:13,color:T.label2}}>{Math.round(catPct)}% complete · {gs.length} goal{gs.length!==1?'s':''}</div>
+                </div>
+              </div>
+              {gs.map((g,i)=>{
+                const p=pct(g);
+                return(
+                  <div key={g.id} onClick={()=>setSheet(g)} style={{padding:'14px 18px',borderBottom:i<gs.length-1?`1px solid ${T.sep}`:'none',cursor:'pointer',display:'flex',alignItems:'center',gap:12}}>
+                    <span style={{fontSize:22,width:32,textAlign:'center'}}>{g.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:14,color:T.label,marginBottom:6}}>{g.label}</div>
+                      <div style={{height:5,background:T.bg3,borderRadius:99,overflow:'hidden'}}>
+                        <div style={{height:'100%',borderRadius:99,background:col,width:`${p}%`,transition:'width .6s',boxShadow:`0 0 6px ${col}66`}}/>
+                      </div>
+                    </div>
+                    <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:14,color:col,minWidth:40,textAlign:'right'}}>{Math.round(p)}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        <button onClick={()=>setAddSheet(true)} style={{width:'100%',padding:'15px',borderRadius:18,background:T.bg2,border:`1.5px dashed ${T.sep}`,color:T.label2,fontFamily:'Instrument Sans',fontWeight:600,fontSize:15,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:4}}>
+          <span style={{fontSize:20}}>⊕</span> New goal
+        </button>
+      </div>
+    );
+  }
+
+  // ── FINANCE TAB
+  function FinanceTab() {
+    const [expanded,setExpanded] = useState(null);
+    const budget = useMemo(()=>{
+      const t=buildInitialGoals({...initProfile,focus:['finance']}).filter(g=>g.category==='finance');
+      const base=[
+        {label:'Savings',        amt:Math.round(initProfile.income*.15/500)*500,icon:'🔒',col:'#30D158'},
+        {label:'Transport',      amt:Math.round(initProfile.income*.18/500)*500,icon:'🚌',col:'#35C0F6'},
+        {label:'Food',           amt:Math.round(initProfile.income*.20/500)*500,icon:'🍲',col:'#FF9F0A'},
+        {label:'Family',         amt:Math.round(initProfile.income*.10/500)*500,icon:'👨‍👩‍👧',col:'#FF6AD5'},
+        {label:'Data & Airtime', amt:Math.round(initProfile.income*.05/500)*500,icon:'📱',col:'#BF5AF2'},
+        {label:initProfile.gender==='female'?'Beauty & Grooming':'Entertainment',
+                                 amt:Math.round(initProfile.income*.08/500)*500,icon:initProfile.gender==='female'?'💅':'🎉',col:'#FF375F'},
+        {label:'Emergency Fund', amt:Math.round(initProfile.income*.12/500)*500,icon:'🛡️',col:'#636366'},
+        {label:'Flex',           amt:Math.round(initProfile.income*.07/500)*500,icon:'🎲',col:'#8E8E93'},
+      ];
+      return base.map(b=>({...b,amt:overrides[b.label]??b.amt}));
+    },[overrides]);
+    const total = budget.reduce((s,b)=>s+b.amt,0);
+    const inc = initProfile.income;
+    const over = total>inc;
+    return(
+      <div>
+        <div style={{background:T.bg2,borderRadius:24,padding:20,marginBottom:16,boxShadow:T.shadow}}>
+          <div style={{fontFamily:'Plus Jakarta Sans',fontSize:13,color:T.label2,fontWeight:500,marginBottom:4}}>Budget overview</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:12}}>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:34,color:over?RING_COLORS.health.stroke:T.label,letterSpacing:'-.03em'}}>₦{total.toLocaleString()}</div>
+            <div style={{fontFamily:'Plus Jakarta Sans',fontSize:14,color:T.label2}}>of ₦{inc.toLocaleString()}</div>
+          </div>
+          <div style={{height:6,background:T.bg3,borderRadius:99,overflow:'hidden'}}>
+            <div style={{height:'100%',borderRadius:99,background:over?RING_COLORS.health.stroke:RING_COLORS.finance.stroke,width:`${Math.min(total/inc*100,100)}%`,transition:'width .8s',boxShadow:`0 0 8px ${over?RING_COLORS.health.stroke:RING_COLORS.finance.stroke}66`}}/>
+          </div>
+          {over
+            ?<div style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:RING_COLORS.health.stroke,marginTop:8,fontWeight:600}}>⚠️ ₦{(total-inc).toLocaleString()} over — adjust categories below</div>
+            :<div style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:RING_COLORS.finance.stroke,marginTop:8,fontWeight:600}}>✓ ₦{(inc-total).toLocaleString()} unallocated</div>}
+        </div>
+        <div style={{background:T.bg2,borderRadius:24,overflow:'hidden',boxShadow:T.shadow}}>
+          {budget.map((item,i)=>{
+            const isExp=expanded===item.label;
+            return(
+              <div key={item.label} style={{borderBottom:i<budget.length-1?`1px solid ${T.sep}`:'none'}}>
+                <div onClick={()=>setExpanded(isExp?null:item.label)} style={{padding:'14px 18px',display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}>
+                  <div style={{width:38,height:38,borderRadius:12,background:item.col+'20',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{item.icon}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:14,color:T.label,marginBottom:4}}>{item.label}</div>
+                    <div style={{height:4,background:T.bg3,borderRadius:99,overflow:'hidden'}}>
+                      <div style={{height:'100%',borderRadius:99,background:item.col,width:`${Math.min(item.amt/inc*100,100)}%`}}/>
+                    </div>
+                  </div>
+                  <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:14,color:item.col,textAlign:'right',minWidth:72}}>₦{item.amt.toLocaleString()}</div>
+                  <span style={{color:T.label3,fontSize:12,transform:isExp?'rotate(180deg)':'rotate(0)',transition:'transform .2s'}}>▾</span>
+                </div>
+                {isExp&&(
+                  <div style={{padding:'0 18px 16px'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                      <button onClick={()=>setOverrides(p=>({...p,[item.label]:Math.max(0,(p[item.label]??item.amt)-1000)}))} style={{width:46,height:46,borderRadius:14,background:T.bg3,border:'none',color:T.label,fontSize:22,cursor:'pointer',fontWeight:700}}>−</button>
+                      <input type="number" value={overrides[item.label]??item.amt} onChange={e=>setOverrides(p=>({...p,[item.label]:parseInt(e.target.value)||0}))}
+                        style={{background:'transparent',border:'none',outline:'none',fontFamily:'Instrument Sans',fontSize:26,fontWeight:700,color:item.col,textAlign:'center',width:160}}/>
+                      <button onClick={()=>setOverrides(p=>({...p,[item.label]:(p[item.label]??item.amt)+1000}))} style={{width:46,height:46,borderRadius:14,background:item.col,border:'none',color:'#fff',fontSize:22,cursor:'pointer',fontWeight:700,boxShadow:`0 2px 12px ${item.col}55`}}>+</button>
+                    </div>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                      {[500,1000,2000,5000,10000].map(s=>(
+                        <div key={s} style={{display:'flex',gap:4}}>
+                          <button onClick={()=>setOverrides(p=>({...p,[item.label]:Math.max(0,(p[item.label]??item.amt)-s)}))} style={{padding:'7px 10px',borderRadius:9,background:dark?RING_COLORS.health.dark:RING_COLORS.health.bg,border:'none',color:RING_COLORS.health.stroke,fontSize:11,fontFamily:'Plus Jakarta Sans',cursor:'pointer',fontWeight:600}}>-{s>=1000?s/1000+'k':s}</button>
+                          <button onClick={()=>setOverrides(p=>({...p,[item.label]:(p[item.label]??item.amt)+s}))} style={{padding:'7px 10px',borderRadius:9,background:dark?RING_COLORS.finance.dark:RING_COLORS.finance.bg,border:'none',color:RING_COLORS.finance.stroke,fontSize:11,fontFamily:'Plus Jakarta Sans',cursor:'pointer',fontWeight:600}}>+{s>=1000?s/1000+'k':s}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── PROFILE TAB
+  function ProfileTab() {
+    const reset=()=>{if(window.confirm('Reset Orbit? This clears all data.')){['orbit_profile','orbit_goals','orbit_overrides'].forEach(k=>localStorage.removeItem(k));window.location.reload();}};
+    return(
+      <div>
+        <div style={{background:'#000',borderRadius:24,padding:24,marginBottom:16,color:'#fff',position:'relative',overflow:'hidden'}}>
+          <div style={{position:'absolute',inset:0}}>
+            <svg width="100%" height="100%" style={{opacity:.15}}>
+              {activeGoals.slice(0,3).map((g,i)=>{
+                const col=RING_COLORS[g.category]?.stroke||'#fff';
+                const r=80+i*30,p=pct(g),circ=2*Math.PI*r,off=circ-p/100*circ;
+                return(<circle key={g.id} cx="100%" cy="0" r={r} fill="none" stroke={col} strokeWidth={10} strokeLinecap="round"
+                  strokeDasharray={circ} strokeDashoffset={off} transform="rotate(-90 100% 0)"/>);
+              })}
+            </svg>
+          </div>
+          <div style={{position:'relative'}}>
+            <div style={{fontSize:48,marginBottom:12}}>{initProfile.gender==='female'?'👩':'🧔'}</div>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:28,letterSpacing:'-.03em',marginBottom:4}}>{initProfile.name}</div>
+            <div style={{fontFamily:'Plus Jakarta Sans',fontSize:14,opacity:.7,marginBottom:16}}>{PROFILES.find(p=>p.id===initProfile.profile)?.icon} {PROFILES.find(p=>p.id===initProfile.profile)?.label} · {initProfile.city}</div>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              <span style={{padding:'5px 12px',borderRadius:99,background:'rgba(255,255,255,.15)',fontSize:12,fontFamily:'Plus Jakarta Sans',fontWeight:600}}>₦{initProfile.income.toLocaleString()}/mo</span>
+              {initProfile.focus.map(f=><span key={f} style={{padding:'5px 12px',borderRadius:99,background:RING_COLORS[f]?.stroke+'44',fontSize:12,fontFamily:'Plus Jakarta Sans',fontWeight:600}}>{CAT_META[f]?.icon} {CAT_META[f]?.label}</span>)}
+            </div>
+          </div>
+        </div>
+
+        {/* Dark mode */}
+        <div style={{background:T.bg2,borderRadius:24,overflow:'hidden',boxShadow:T.shadow,marginBottom:16}}>
+          <div style={{padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${T.sep}`}}>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>🌙 Dark Mode</div>
+            <div onClick={toggle} style={{width:52,height:30,borderRadius:99,background:dark?RING_COLORS.mind.stroke:T.bg3,position:'relative',cursor:'pointer',transition:'background .25s',boxShadow:dark?`0 0 12px ${RING_COLORS.mind.stroke}55`:'none'}}>
+              <div style={{position:'absolute',top:3,left:dark?24:3,width:24,height:24,borderRadius:99,background:'#fff',transition:'left .25s cubic-bezier(.34,1.56,.64,1)',boxShadow:'0 2px 6px rgba(0,0,0,.3)'}}/>
+            </div>
+          </div>
+          <div style={{padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${T.sep}`}}>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>🎯 Active goals</div>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:16,color:T.label2}}>{activeGoals.length}</div>
+          </div>
+          <div style={{padding:'16px 18px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:600,fontSize:16,color:T.label}}>📊 Orbit score</div>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:16,color:RING_COLORS.finance.stroke}}>{Math.round(totalPct)}%</div>
+          </div>
+        </div>
+
+        <button onClick={reset} style={{width:'100%',padding:'15px',borderRadius:18,background:T.bg2,border:`1px solid ${T.sep}`,fontFamily:'Instrument Sans',fontWeight:600,fontSize:15,color:RING_COLORS.health.stroke,cursor:'pointer'}}>
+          Reset Orbit
+        </button>
+      </div>
+    );
+  }
+
+  // ── GOAL DETAIL SHEET
+  const sheetGoal = sheet ? goals.find(g=>g.id===sheet.id)||sheet : null;
+
+  // ── ADD GOAL SHEET
+  const CATS=['finance','health','mind','connect','growth','custom'];
+  const ICONS_BY_CAT={finance:['💰','🔒','💳','📈','🏦','💵'],health:['🏃','💧','🏋️','🥗','😴','🚴'],mind:['📚','🧘','✍️','🎯','💡','🎓'],connect:['❤️','☎️','🤝','👨‍👩‍👧','🫂','🎁'],growth:['🌱','🛠️','💼','🗣️','🏆','📝'],custom:['⭐','🎪','🐕','🏠','✈️','🎵']};
+
+  const tabs=[
+    {id:'today',icon:'⊙',label:'Today'},
+    {id:'goals',icon:'◎',label:'Goals'},
+    {id:'finance',icon:'₦',label:'Finance'},
+    {id:'profile',icon:'○',label:'Profile'},
+  ];
+
+  const content={today:<TodayTab/>,goals:<GoalsTab/>,finance:<FinanceTab/>,profile:<ProfileTab/>};
+
+  return(
+    <div style={{height:'100dvh',display:'flex',flexDirection:'column',background:T.bg}}>
+      <div style={{flex:1,overflowY:'auto',padding:'calc(env(safe-area-inset-top,0px)+20px) 16px 0'}}>
+        <div style={{paddingBottom:96}}>{content[tab]}</div>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{position:'fixed',bottom:0,left:0,right:0,background:T.glass,backdropFilter:'blur(20px)',WebkitBackdropFilter:'blur(20px)',borderTop:`1px solid ${T.sep}`,paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
+        <div style={{display:'flex',padding:'6px 0 2px'}}>
+          {tabs.map(t=>{
+            const active=tab===t.id;
+            return(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'8px 0 6px',background:'none',border:'none',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:3,transition:'opacity .15s',opacity:active?1:.55}}>
+                <span style={{fontFamily:'Instrument Sans',fontSize:t.id==='finance'?20:22,fontWeight:700,color:active?RING_COLORS.finance.stroke:T.label2,lineHeight:1}}>{t.icon}</span>
+                <span style={{fontFamily:'Plus Jakarta Sans',fontSize:10,fontWeight:active?700:500,color:active?RING_COLORS.finance.stroke:T.label2}}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Goal detail sheet */}
+      {sheetGoal&&(
+        <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)',backdropFilter:'blur(4px)'}} onClick={()=>setSheet(null)}/>
+          <div style={{position:'relative',background:T.bg2,borderRadius:'28px 28px 0 0',padding:28,paddingBottom:'calc(env(safe-area-inset-bottom,0px)+24px)',animation:'popIn .35s cubic-bezier(.34,1.56,.64,1)',maxHeight:'85dvh',overflowY:'auto'}}>
+            <div style={{width:44,height:5,borderRadius:99,background:T.bg3,margin:'0 auto 24px'}}/>
+            {(() => {
+              const g=sheetGoal;
+              const col=RING_COLORS[g.category]?.stroke||RING_COLORS.custom.stroke;
+              const p=pct(g);
+              return(
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
+                    <Ring pct={p} color={col} r={40} sw={10} animated={true} delay={0}/>
+                    <div>
+                      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:22,color:T.label,letterSpacing:'-.02em'}}>{g.icon} {g.label}</div>
+                      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:14,color:T.label2,marginTop:4}}>{CAT_META[g.category]?.label} · {Math.round(p)}% complete</div>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+                    <button onClick={()=>logProgress(g.id,-1)} style={{width:56,height:56,borderRadius:18,background:T.bg3,border:'none',color:T.label,fontSize:26,cursor:'pointer',fontWeight:700}}>−</button>
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:40,color:col,lineHeight:1,letterSpacing:'-.03em'}}>{g.progress}</div>
+                      <div style={{fontFamily:'Plus Jakarta Sans',fontSize:14,color:T.label3,marginTop:4}}>of {g.target} {g.unit}</div>
+                    </div>
+                    <button onClick={()=>logProgress(g.id,1)} style={{width:56,height:56,borderRadius:18,background:col,border:'none',color:'#fff',fontSize:26,cursor:'pointer',fontWeight:700,boxShadow:`0 4px 20px ${col}55`}}>+</button>
+                  </div>
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:20}}>
+                    {[1,2,3,5,10].map(s=>(
+                      <button key={s} onClick={()=>logProgress(g.id,s)} style={{flex:1,padding:'10px 8px',borderRadius:12,background:col+'20',border:'none',color:col,fontFamily:'Instrument Sans',fontWeight:700,fontSize:14,cursor:'pointer'}}>+{s}</button>
+                    ))}
+                  </div>
+                  <button onClick={()=>{delGoal(g.id);setSheet(null);}} style={{width:'100%',padding:'13px',borderRadius:16,background:dark?RING_COLORS.health.dark:RING_COLORS.health.bg,border:'none',color:RING_COLORS.health.stroke,fontFamily:'Instrument Sans',fontWeight:600,fontSize:15,cursor:'pointer'}}>
+                    Remove goal
+                  </button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Add goal sheet */}
+      {addSheet&&(
+        <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+          <div style={{position:'absolute',inset:0,background:'rgba(0,0,0,.5)',backdropFilter:'blur(4px)'}} onClick={()=>setAddSheet(false)}/>
+          <div style={{position:'relative',background:T.bg2,borderRadius:'28px 28px 0 0',padding:28,paddingBottom:'calc(env(safe-area-inset-bottom,0px)+24px)',animation:'popIn .35s cubic-bezier(.34,1.56,.64,1)',maxHeight:'92dvh',overflowY:'auto'}}>
+            <div style={{width:44,height:5,borderRadius:99,background:T.bg3,margin:'0 auto 24px'}}/>
+            <div style={{fontFamily:'Instrument Sans',fontWeight:700,fontSize:22,color:T.label,letterSpacing:'-.02em',marginBottom:20}}>New Goal</div>
+            <div style={{marginBottom:14}}>
+              <div style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:T.label3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:600,marginBottom:8}}>Category</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {CATS.map(c=>{const sel=newGoal.category===c;const col=RING_COLORS[c]?.stroke;return(
+                  <button key={c} onClick={()=>setNewGoal(p=>({...p,category:c,icon:ICONS_BY_CAT[c][0]}))}
+                    style={{padding:'8px 14px',borderRadius:99,border:`2px solid ${sel?col:T.sep}`,background:sel?RING_COLORS[c]?.bg:T.bg2,color:sel?col:T.label2,fontFamily:'Instrument Sans',fontWeight:600,fontSize:13,cursor:'pointer',transition:'all .15s'}}>
+                    {CAT_META[c]?.icon} {CAT_META[c]?.label}
+                  </button>
+                );})}
+              </div>
+            </div>
+            <div style={{marginBottom:14}}>
+              <div style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:T.label3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:600,marginBottom:8}}>Icon</div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {(ICONS_BY_CAT[newGoal.category]||[]).map(ic=>(
+                  <button key={ic} onClick={()=>setNewGoal(p=>({...p,icon:ic}))}
+                    style={{width:44,height:44,borderRadius:14,border:`2px solid ${newGoal.icon===ic?RING_COLORS[newGoal.category]?.stroke:T.sep}`,background:newGoal.icon===ic?RING_COLORS[newGoal.category]?.bg:T.bg2,fontSize:22,cursor:'pointer',transition:'all .15s'}}>
+                    {ic}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {[['Goal name','text','e.g. Save ₦20,000, 30 workouts...','label'],['Target (number)','number','e.g. 20000','target'],['Unit','text','e.g. sessions, ₦, days...','unit']].map(([lbl,type,ph,key])=>(
+              <div key={key} style={{marginBottom:14}}>
+                <div style={{fontFamily:'Plus Jakarta Sans',fontSize:12,color:T.label3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:600,marginBottom:8}}>{lbl}</div>
+                <input type={type} placeholder={ph} value={newGoal[key]}
+                  onChange={e=>setNewGoal(p=>({...p,[key]:e.target.value}))} inputMode={type==='number'?'numeric':undefined}
+                  style={{width:'100%',padding:'14px 16px',borderRadius:16,border:`1.5px solid ${T.sep}`,background:T.bg3,color:T.label,fontSize:16,fontFamily:'Instrument Sans',fontWeight:600,outline:'none'}}/>
+              </div>
+            ))}
+            <button onClick={()=>{
+              if(!newGoal.label||!newGoal.target) return;
+              const g={id:Date.now(),category:newGoal.category,icon:newGoal.icon,label:newGoal.label,target:parseInt(newGoal.target)||10,progress:0,unit:newGoal.unit||'',type:newGoal.type};
+              setGoals(prev=>[...prev,g]);
+              setNewGoal({label:'',category:'finance',icon:'🎯',target:'',unit:'',type:'count'});
+              setAddSheet(false);
+            }} style={{width:'100%',padding:'16px',borderRadius:20,background:newGoal.label&&newGoal.target?'#000':T.bg3,color:newGoal.label&&newGoal.target?'#fff':T.label3,border:'none',fontFamily:'Instrument Sans',fontWeight:700,fontSize:17,cursor:newGoal.label&&newGoal.target?'pointer':'default',transition:'all .2s',marginTop:4}}>
+              Create Goal
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ROOT ─────────────────────────────────────────────────────
+function Root() {
+  const [dark,setDark] = useState(()=>S.get('orbit_dark')??window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const toggle = useCallback(()=>setDark(d=>{S.set('orbit_dark',!d);return !d;}),[]);
+  const T = dark ? DARK : LIGHT;
+  useEffect(()=>{ document.documentElement.setAttribute('data-dark',dark?'1':'0');
+    document.querySelector('#tc').content=dark?'#000000':'#F2F2F7'; },[dark]);
+
+  const [screen,setScreen] = useState('splash');
+  const [profile,setProfile] = useState(null);
+  const [goals,setGoals] = useState(null);
+
+  useEffect(()=>{
+    const p=S.get('orbit_profile'),g=S.get('orbit_goals');
+    if(p&&g){setProfile(p);setGoals(g);setScreen('app');}
+    else setTimeout(()=>setScreen('onboard'),2000);
+  },[]);
+
+  return (
+    <ThemeCtx.Provider value={{dark,toggle,T}}>
+      <div style={{height:'100dvh',color:T.label}}>
+        {screen==='splash'&&<Splash onDone={()=>{}}/>}
+        {screen==='onboard'&&<Onboarding onComplete={(p,g)=>{setProfile(p);setGoals(g);setScreen('app');}}/>}
+        {screen==='app'&&profile&&goals&&<App profile={profile} goals={goals}/>}
+      </div>
+    </ThemeCtx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root/>);
+</script>
+</body>
+</html>
